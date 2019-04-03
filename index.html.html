@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Spill</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" type="text/css" media="screen" href="stilark.css" />
+</head>
+
+<body>
+    <div id="container">
+        <div id="header">
+            <a href="valleyway.html">
+                <img id="headerBilde" src="media/header-bilde.png">
+            </a>
+        </div>
+        <div class="navbar">
+            <a class="leftMeny1" href="valleyway.html">HJEM</a>
+            <a class="leftMeny2" href="info.html">INFO</a>
+            <a class="leftMeny2" href="#FlereSpill">FLERE SPILL</a>
+            <a class="rightMeny" href="#OmOss">OM OSS</a>
+        </div>
+        <h2 id="hdnPoeng">Poeng: 0</h2>
+        <h2 id="hdnRekord">Rekord: 0</h2>
+        <div id="gameBox">
+            <div id="knapp"></div>
+            <canvas id="minCanvas" width="1000" height="560"></canvas>
+        </div>
+    </div>
+
+    <script>
+        var gameBox = document.getElementById("gameBox");
+        var knapp = document.getElementById("knapp");
+
+        // sjekker hvilken tall-verdi enkelte knapper har på tastaturet
+        document.onkeydown = function (evt) {
+            var tallkode = evt.keyCode;
+            console.log(tallkode);
+        }
+        var minCanvas = document.getElementById("minCanvas");
+        var ctx = minCanvas.getContext("2d");
+        var theGameIsOn = false;
+        // variabler for poeng og rekord, og elementer som viser poeng
+        var hdnPoeng = document.getElementById("hdnPoeng");
+        var hdnRekord = document.getElementById("hdnRekord");
+        var poeng = 0;
+        // lagrer rekord
+        if (localStorage.rekord === undefined) {
+            localStorage.rekord = 0;
+        }
+        hdnRekord.innerHTML = "Rekord: " + localStorage.rekord;
+
+        // variabler for lydeffekter
+        var pong = new Audio("media/pong-sound.mp3");
+        var oof = new Audio("media/mc-oof.mp3");
+        var go = new Audio("media/go-sound.mp3");
+        var rekordLyd = new Audio("media/rekord-sound.mp3");
+        var bakgrunnLyd = new Audio("media/bakgrunn-sound.mp3");
+        var rekordHasPlayed = false;
+        bakgrunnLyd.volume = 0.2;
+        bakgrunnLyd.loop = true;
+
+        // variabel med verdiene til banen
+        var bane = {
+            "bredde": minCanvas.width,
+            "hoyde": minCanvas.height,
+        }
+        // tegner banen
+        function tegnBane() {
+            // lager gradient bakgrunn
+            var grd = ctx.createLinearGradient(0, 0, 0, 500);
+            grd.addColorStop(0, "#f56217");
+            grd.addColorStop(1, "#0b486b");
+            ctx.fillStyle = grd;
+            ctx.fillRect(0, 0, bane.bredde, bane.hoyde);
+        }
+
+        // variabel med verdiene til ballen
+        var ball = {
+            "radius": 6,
+            "farge": "white",
+            "xpos": 500,
+            "ypos": 480,
+            "xretning": 1,
+            "yretning": 1,
+            "xfart": 7,
+            "yfart": 8
+        };
+        
+        // funksjon som tegner ball i canvas-elementet
+        function tegnBall() {
+            ctx.beginPath();
+            ctx.arc(ball.xpos, ball.ypos, ball.radius, 0, Math.PI * 2);
+            ctx.closePath();
+            ctx.fillStyle = ball.farge;
+            ctx.fill();
+
+            ball.xpos = ball.xpos + ball.xfart * ball.xretning;     //endrer på ballposisjonen
+            ball.ypos = ball.ypos + ball.yfart * ball.yretning;
+            
+        }
+        // funksjon som sjekker om objekter treffer kantene i canvas elementet
+        // og får de til å stoppe/sprette (endrer retningen til ballen om den treffer en vegg)
+        function veggTreff() {
+            // sjekker kant-treff for ball
+            if (ball.xpos <= ball.radius) {
+                ball.xretning = 1;
+                pong.play(); // spiller av lyd når denne biten aktiveres (gjelder de andre if-setningene og)
+            }
+            if (ball.xpos + ball.radius >= bane.bredde) {
+                ball.xretning = -1;
+                pong.play();
+            }
+            if (ball.ypos + ball.radius >= bane.hoyde) {
+                ball.yretning = -1;
+                pong.play();
+            }
+            if (ball.ypos <= ball.radius) {
+                ball.yretning = 1;
+                pong.play();
+            }
+
+        }
+
+        // lager variabel for racketen som ballen skal treffe
+        var racket = {
+            "radius": 7,
+            "bredde": 175,
+            "hoyde": 20,
+            "farge": "#f56217",
+            "xpos": 410,
+            "ypos": 500,
+            "xfart": 11,
+            "xretning": 0,
+        };
+        // funksjon som tegner racketen i canvas-elementet
+        function tegnRacket() {
+            ctx.fillStyle = racket.farge;
+            ctx.fillRect(racket.xpos, racket.ypos, racket.bredde, racket.hoyde);
+
+            // if-setninger som sjekker om racketen treffer veggen
+            // dersom den gjør det avslutter den funksjonen, hvis ikke fortsetter den
+            if (racket.xpos <= 0 && racket.xretning === -1) {
+                return;
+            }
+
+            if (racket.xpos + racket.bredde >= bane.bredde && racket.xretning === 1) {
+                return;
+            }
+            // Endrer på x-posisjonen
+            racket.xpos = racket.xpos + (racket.xfart * racket.xretning);
+        }
+
+        // funksjon som sjekker om ballen treffer racketen og spretter ballen
+        // når den treffer racketen
+        function sjekkOmBallTrefferRacket() {
+            var ballenErTilVenstre = ball.ypos + ball.radius < racket.ypos;
+            var ballenErTilHoyre = ball.ypos - ball.radius > racket.ypos + racket.hoyde;
+            var ballenErOver = ball.xpos + ball.radius < racket.xpos;
+            var ballenErUnder = ball.xpos - ball.radius > racket.xpos + racket.bredde;
+            if (!ballenErTilVenstre && !ballenErTilHoyre && !ballenErOver && !ballenErUnder) {
+                ball.yretning = -1; // endrer ballretningen
+                // spiller av lyd
+                pong.play();
+
+                // if-setninger som endrer på ball xfarten når racketen er i bevegelse
+                // for å skape litt variasjon i spillet
+                
+                if (racket.xretning == -1 && ball.xretning == -1 || racket.xretning == 1 && ball.xretning == 1) {
+                    ball.xfart = 9; //når racketen har lik xretning som ballen øker xfarten til ballen
+                } 
+                else if (racket.xretning == 1 && ball.xretning == -1 || racket.xretning == -1 && ball.xretning == 1) {
+                    ball.xfart = 4; //når racketen har motsat xretning som ballen synker xfarten
+                } else {
+                    ball.xfart = 6; //når ingen av delene slår til (racketen står stille) enderer xfarten til ballen til standardfart
+                }
+            }
+        }
+
+        //funksjon som beveger på racketen utifra piltassene man trykker på
+        document.onkeydown = function (evt) {
+            var tallkode = evt.keyCode;
+            if (tallkode === 37) {
+                racket.xretning = -1;
+            }
+            if (tallkode === 39) {
+                racket.xretning = 1;
+            }
+        }
+
+        // funksjon som stopper racketen når man løfter fingeren fra piltassene
+        document.onkeyup = function (evt) {
+            var tallkode = evt.keyCode;
+            if (tallkode === 37 && racket.xretning === -1) {
+                racket.xretning = 0;
+            }
+            if (tallkode === 39 && racket.xretning === 1) {
+                racket.xretning = 0;
+            }
+        }
+
+        // funksjon som sjekker om ballen er utenfor banen/under racketen
+        function sjekkOmBallErUtenforBanen() {
+            if (ball.ypos > racket.ypos + 45) {
+                theGameIsOn = false;
+                oof.play();
+                bakgrunnLyd.pause();
+                knapp.innerHTML = '<button onmousedown="restart()">Restart</button>'
+            }
+        }
+
+        var fargerBrikke = ["blue", "black", "gray", "pink", "yellow", "orange", "green"];
+
+        // variabel for brikkene man ønsker å treffe
+        var brikke = {
+            "radLengde": 4,
+            "kolonneLengde": 5,
+            "bredde": 160,
+            "hoyde": 20,
+            "farge": "white",
+            "xpos": 80,
+            "ypos": 75,
+            "padding": 10
+        };
+        
+        // lager array for alle brikkene
+        var brikker = [];
+        for (var c = 0; c < brikke.kolonneLengde; c++) {
+            brikker[c] = [];
+            for (var r = 0; r < brikke.radLengde; r++) {
+                brikker[c][r] = { x: 0, y: 0, status: 1 }; // gir også brikkene en status
+            }                                              // når statusen er 0 (etter de er truffet)
+        }                                                  // forsvinner de som man kan se senere i koden
+
+        // funksjon som tegner brikkene og setter dem opp etterhverandre
+        // i kolonne og rader.
+        function tegnBrikke() {
+            for (var c = 0; c < brikke.kolonneLengde; c++) { // lager kolonnene
+                for (var r = 0; r < brikke.radLengde; r++) { // lager radene
+                    if (brikker[c][r].status == 1) { // sjekker om statusen er 1 for de brikkene den skal tegne
+                        var brikkeX = (c * (brikke.bredde + brikke.padding)) + brikke.xpos; //kalkulerer xpos
+                        var brikkeY = (r * (brikke.hoyde + brikke.padding)) + brikke.ypos; //kalkulerer ypos
+                        brikker[c][r].x = brikkeX;
+                        brikker[c][r].y = brikkeY;
+                        ctx.beginPath();
+                        ctx.rect(brikkeX, brikkeY, brikke.bredde, brikke.hoyde); //tegner brikke med kalkulasjonene ovenfor
+                        ctx.fillStyle = brikke.farge;
+                        ctx.fill();
+                        ctx.closePath();
+                    }
+                }
+            }
+        }
+
+        // funksjon som kalkulerer om brikken har truffet brikkene eller ikke
+        function brikkeTreff() {
+            for (var c = 0; c < brikke.kolonneLengde; c++) {
+                for (var r = 0; r < brikke.radLengde; r++) {
+                    var b = brikker[c][r];
+                    // if setning som sjekker om brikke-status er 1. Altså hvis brikkestatus == 0
+                    // vil den ikke registrere terff på den brikken.
+                    if (b.status == 1) {
+                        // if-setning som sjekker om ballen treffer kantene til brikkene
+                        if (ball.xpos > b.x && ball.xpos < b.x + brikke.bredde && ball.ypos > b.y && ball.ypos < b.y + brikke.hoyde) {
+                            ball.yretning = -ball.yretning; // endrer på ballretningen hvis ballen treffer brikkene
+                            b.status = 0; // endrer brikkestatus til 0 slik at den forsvinner
+                            pong.play(); // spiller av lyd
+                            //sjekker poeng
+                            poeng = poeng + 1;
+                            hdnPoeng.innerHTML = "Poeng: " + poeng;
+                            //sjekker rekord
+                            if (poeng > localStorage.rekord) {
+                                localStorage.rekord = poeng;
+                                hdnRekord.innerHTML = "Ny rekord: " + poeng;
+                                hdnRekord.style.color = "yellow";
+                                if (!rekordHasPlayed){ // spiller av ny rekord lyd bare om den ikke har blit spilt av før
+                                    rekordLyd.play();  // slik at det ikke repeteres hele tiden i samme spill session
+                                    rekordHasPlayed = true;
+                                }
+                            }
+                            // if-setning som spawner tilbake brikkene dersom banen blir tømt (maks poeng er 300, når man det vinner man spillet)
+                            if (poeng == 20  || poeng == 40 || poeng == 60 || poeng == 80 || poeng == 100 || poeng == 120 || poeng == 140 || poeng == 160 || poeng == 180 || poeng == 200 || poeng == 220 || poeng == 240 || poeng == 260 || poeng == 280) {
+                                for (var c = 0; c < brikke.kolonneLengde; c++) {
+                                    brikker[c] = [];
+                                    for (var r = 0; r < brikke.radLengde; r++) {
+                                        brikker[c][r] = { x: 0, y: 0, status: 1 };
+                                    }
+                                }
+
+                            }
+                            if (poeng == 300) {
+                                theGameIsOn = false;
+                                bakgrunnLyd.pause();
+                                knapp.innerHTML = '<button onmousedown="restart()">Du vant! Prøv igjen?</button>'
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // funksjon som skriver ut "start-knappen" og setter spillet i gang når
+        // bruker trgger på den.
+        function start() {
+            knapp.innerHTML = '<button onmousedown="restart()">Start</button>' // legger til en knapp
+
+        }
+        start();
+
+        // funksjon som restarter spillet
+        function restart() {
+            theGameIsOn = true;
+            // setter slik at rekordlyden aldri har spilt
+            rekordHasPlayed = false;
+            // spiller lyd effekter
+            go.play();
+            bakgrunnLyd.play();
+            bakgrunnLyd.currentTime = 0;
+            // endrer på rekord-stilen og nullstriller poengsummen
+            hdnRekord.innerHTML = "Rekord: " + localStorage.rekord;
+            hdnRekord.style.color = "white";
+            poeng = 0;
+            hdnPoeng.innerHTML = "Poeng: " + poeng;
+            // resetter brikkestatus
+            for (var c = 0; c < brikke.kolonneLengde; c++) {
+                brikker[c] = [];
+                for (var r = 0; r < brikke.radLengde; r++) {
+                    brikker[c][r] = { x: 0, y: 0, status: 1 };
+                }
+            }
+            
+            // resetter ball og racket variablen (posisjon og fart)
+            ball = {
+                "radius": 6,
+                "farge": "white",
+                "xpos": 300,
+                "ypos": 280,
+                "xretning": 1,
+                "yretning": 1,
+                "xfart": 7,
+                "yfart": 8
+            }
+
+            racket = {
+                "radius": 7,
+                "bredde": 175,
+                "hoyde": 20,
+                "farge": "#f56217",
+                "xpos": 410,
+                "ypos": 500,
+                "xfart": 11,
+                "xretning": 0,
+            };
+            knapp.innerHTML = ""; // fjerner knappen
+            gameLoop();
+        }
+
+        // funksjon som skriver ut selve spillet
+        function gameLoop() {
+            //skriver ut/tegner ball, bakgrunn, linje og bevegelse i canvas
+            tegnBane();
+            tegnBall();
+            veggTreff();
+            tegnRacket();
+            tegnBrikke();
+            brikkeTreff();
+            sjekkOmBallTrefferRacket();
+            sjekkOmBallErUtenforBanen();
+            if (theGameIsOn) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+        gameLoop();
+    </script>
+</body>
+
+</html>
